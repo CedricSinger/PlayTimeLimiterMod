@@ -1,11 +1,16 @@
 package net.c3dd1.playtimelimiter.timer;
 
+import net.c3dd1.playtimelimiter.config.PlaytimeLimiterServerConfigs;
 import net.minecraft.nbt.*;
 import net.minecraftforge.common.capabilities.AutoRegisterCapability;
 
 @AutoRegisterCapability
 public class PlayerTimer {
     private Double leftPlaytime;
+
+    public PlayerTimer() {
+        leftPlaytime = PlaytimeLimiterServerConfigs.ALLOWED_PLAYTIME.get();
+    }
 
     public Double getLeftPlaytime() {
         return leftPlaytime;

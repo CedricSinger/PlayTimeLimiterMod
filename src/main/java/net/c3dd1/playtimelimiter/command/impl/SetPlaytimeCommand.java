@@ -19,10 +19,8 @@ public class SetPlaytimeCommand extends BaseCommand {
 
     @Override
     public LiteralArgumentBuilder<CommandSourceStack> setExecution() {
-        builder.then(Commands.argument("player", EntityArgument.player()));
-        builder.then(Commands.argument("time", IntegerArgumentType.integer())
+        return builder.then(Commands.argument("player", EntityArgument.player())).then(Commands.argument("time", IntegerArgumentType.integer())
                 .executes(source -> execute(source.getSource(), EntityArgument.getPlayer(source, "player"), IntegerArgumentType.getInteger(source, "time"))));
-        return builder;
     }
 
     private int execute(CommandSourceStack source, Player player, int time) {

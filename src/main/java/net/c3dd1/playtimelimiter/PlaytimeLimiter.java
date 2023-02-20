@@ -1,16 +1,18 @@
 package net.c3dd1.playtimelimiter;
 
 import com.mojang.logging.LogUtils;
-import net.c3dd1.playtimelimiter.config.PlaytimeLimiterCommonConfigs;
+import net.c3dd1.playtimelimiter.config.PlaytimeLimiterServerConfigs;
 import net.c3dd1.playtimelimiter.init.CommandInit;
-import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.common.capabilities.RegisterCapabilitiesEvent;
 import net.minecraftforge.event.AttachCapabilitiesEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -24,7 +26,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.slf4j.Logger;
 import net.minecraftforge.event.*;
-import java.util.HashMap;
+
 import java.util.LinkedList;
 import net.c3dd1.playtimelimiter.timer.*;
 
@@ -62,7 +64,7 @@ public class PlaytimeLimiter
         // Register ourselves for server and other game events we are interested in
         MinecraftForge.EVENT_BUS.register(this);
 
-        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, PlaytimeLimiterCommonConfigs.SPEC, "playtimelimiter-common.toml");
+        ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, PlaytimeLimiterServerConfigs.SPEC, "playtimelimiter-server.toml");
     }
 
     private void commonSetup(final FMLCommonSetupEvent event)
@@ -71,13 +73,13 @@ public class PlaytimeLimiter
         LOGGER.info("HELLO FROM COMMON SETUP");
         LOGGER.info("DIRT BLOCK >> {}", ForgeRegistries.BLOCKS.getKey(Blocks.DIRT));
 
-        String blacklistReadout = PlaytimeLimiterCommonConfigs.BLACKLIST.get();
-        allowedPlaytime = PlaytimeLimiterCommonConfigs.ALLOWED_PLAYTIME.get();
-        bonusTime2P = PlaytimeLimiterCommonConfigs.BONUS_TIME_2_PLAYERS.get();
-        bonusTime3P = PlaytimeLimiterCommonConfigs.BONUS_TIME_3_PLAYERS.get();
-        bonusTime4P = PlaytimeLimiterCommonConfigs.BONUS_TIME_4_PLAYERS.get();
-        bonusTime5P = PlaytimeLimiterCommonConfigs.BONUS_TIME_5_OR_MORE_PLAYERS.get();
-        resetTime = PlaytimeLimiterCommonConfigs.RESET_TIME.get();
+        String blacklistReadout = PlaytimeLimiterServerConfigs.BLACKLIST.get();
+        allowedPlaytime = PlaytimeLimiterServerConfigs.ALLOWED_PLAYTIME.get();
+        bonusTime2P = PlaytimeLimiterServerConfigs.BONUS_TIME_2_PLAYERS.get();
+        bonusTime3P = PlaytimeLimiterServerConfigs.BONUS_TIME_3_PLAYERS.get();
+        bonusTime4P = PlaytimeLimiterServerConfigs.BONUS_TIME_4_PLAYERS.get();
+        bonusTime5P = PlaytimeLimiterServerConfigs.BONUS_TIME_5_OR_MORE_PLAYERS.get();
+        resetTime = PlaytimeLimiterServerConfigs.RESET_TIME.get();
     }
 
     // You can use SubscribeEvent and let the Event Bus discover methods to call
@@ -112,12 +114,14 @@ public class PlaytimeLimiter
 
 
 
-    @Mod.EventBusSubscriber(modid = MODID,bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.DEDICATED_SERVER)
-    public class ServerModEvents
-    {
+    @Mod.EventBusSubscriber(modid = MODID, value = Dist.DEDICATED_SERVER)
+    public class ServerModEvents {
+
         @SubscribeEvent
         public void onPlayerJoin(PlayerEvent.PlayerLoggedInEvent event) {
-
+            event.getEntity().getCapability(PlayerTimerProvider.PLAYER_TIMER).ifPresent(timer -> {
+                event.getEntity().sendSystemMessage(Component.literal("Remaining Playtime: " + timer.getLeftPlaytime() + "minutes"));
+            });
         }
 
         @SubscribeEvent
@@ -126,16 +130,16 @@ public class PlaytimeLimiter
         }
 
         @SubscribeEvent
-        public void onAttachCapabilitiesPlayer(AttachCapabilitiesEvent event) {
+        public static void onAttachCapabilitiesPlayer(AttachCapabilitiesEvent<Entity> event) {
             if(event.getObject() instanceof Player) {
-                if(!((Player) event.getObject()).getCapability(PlayerTimerProvider.PLAYER_TIMER).isPresent()) {
+                if(!event.getObject().getCapability(PlayerTimerProvider.PLAYER_TIMER).isPresent()) {
                     event.addCapability(new ResourceLocation(MODID, "properties"), new PlayerTimerProvider());
                 }
             }
         }
 
         @SubscribeEvent
-        public void onPlayerCloned(PlayerEvent.Clone event) {
+        public static void onPlayerCloned(PlayerEvent.Clone event) {
             if(event.isWasDeath()) {
                 event.getOriginal().getCapability(PlayerTimerProvider.PLAYER_TIMER).ifPresent(oldStore -> {
                     event.getOriginal().getCapability(PlayerTimerProvider.PLAYER_TIMER).ifPresent(newStore -> {
@@ -146,8 +150,13 @@ public class PlaytimeLimiter
         }
 
         @SubscribeEvent
+        public static void onRegisterCapabilities(RegisterCapabilitiesEvent event) {
+            event.register(PlayerTimer.class);
+        }
+
+        @SubscribeEvent
         public void onServerTick(TickEvent.ServerTickEvent event) {
-            if(java.time.ZonedDateTime.now().getHour() == resetTime && java.time.ZonedDateTime.now().getMinute() == 0 && java.time.ZonedDateTime.now().getSecond() == 0) {
+            /*if(java.time.ZonedDateTime.now().getHour() == resetTime && java.time.ZonedDateTime.now().getMinute() == 0 && java.time.ZonedDateTime.now().getSecond() == 0) {
                 for(Player player : event.getServer().getPlayerList().getPlayers()) {
                     player.getCapability(PlayerTimerProvider.PLAYER_TIMER).ifPresent(timer -> {
                         timer.setLeftPlaytime(allowedPlaytime);
@@ -205,13 +214,15 @@ public class PlaytimeLimiter
                                 }
                             }
                         }
-
                     }
                 });
+            }*/
+            for(ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
+                player.getCapability(PlayerTimerProvider.PLAYER_TIMER).ifPresent(timer -> {
+                    boolean playtimeLeft = timer.decreaseLeftPlaytime(0.0001);
+                });
+                player.sendSystemMessage(Component.literal("ja moin"));
             }
-
         }
     }
-
-
 }

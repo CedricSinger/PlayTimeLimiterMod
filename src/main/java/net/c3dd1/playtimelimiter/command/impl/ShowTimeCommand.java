@@ -26,6 +26,7 @@ public class ShowTimeCommand extends BaseCommand {
     private int execute(CommandSourceStack source, Player player) {
         player.getCapability(PlayerTimerProvider.PLAYER_TIMER).ifPresent(timer -> {
             player.sendSystemMessage(Component.literal("Remaining Playtime: " + timer.getLeftPlaytime() + "minutes"));
+
         });
         return 1;
     }
