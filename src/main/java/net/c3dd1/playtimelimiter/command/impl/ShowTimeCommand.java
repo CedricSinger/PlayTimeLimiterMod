@@ -6,9 +6,11 @@ import net.c3dd1.playtimelimiter.timer.PlayerTimerProvider;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
-import net.minecraft.commands.arguments.StringRepresentableArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
+import static net.c3dd1.playtimelimiter.util.Utilities.round;
+
+
 
 public class ShowTimeCommand extends BaseCommand {
 
@@ -25,7 +27,7 @@ public class ShowTimeCommand extends BaseCommand {
 
     private int execute(CommandSourceStack source, Player player) {
         player.getCapability(PlayerTimerProvider.PLAYER_TIMER).ifPresent(timer -> {
-            player.sendSystemMessage(Component.literal("Remaining Playtime: " + timer.getLeftPlaytime() + "minutes"));
+            source.sendSystemMessage(Component.literal("Remaining Playtime of Player " + player + ": " + round(timer.getLeftPlaytime(), 2) + " minutes"));
 
         });
         return 1;

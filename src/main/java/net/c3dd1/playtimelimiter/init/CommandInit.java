@@ -15,6 +15,7 @@ public class CommandInit {
 
         commands.add(new ShowTimeCommand("showtime", 0, true));
         commands.add(new SetPlaytimeCommand("setplaytime", 3, true));
+        commands.add(new ResetAllTimesCommand("resetalltimes", 3, true));
 
         commands.forEach(command -> {
             if(command.isEnabled() && command.setExecution() != null) {
