@@ -3,15 +3,16 @@ package net.c3dd1.playtimelimiter;
 import com.mojang.logging.LogUtils;
 import net.c3dd1.playtimelimiter.config.PlaytimeLimiterServerConfigs;
 import net.c3dd1.playtimelimiter.init.CommandInit;
-import net.c3dd1.playtimelimiter.network.ModNetworking;
 import net.c3dd1.playtimelimiter.timer.PlayerTimer;
 import net.c3dd1.playtimelimiter.timer.PlayerTimerProvider;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraftforge.common.ForgeConfig;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.capabilities.RegisterCapabilitiesEvent;
 import net.minecraftforge.event.AttachCapabilitiesEvent;
@@ -25,6 +26,7 @@ import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.registries.ForgeRegistries;
+import org.apache.logging.log4j.core.jmx.Server;
 import org.slf4j.Logger;
 import net.minecraftforge.event.*;
 
@@ -43,6 +45,12 @@ public class PlaytimeLimiter
 
 
 
+    private static Player playerBeingKicked;
+    private static MinecraftServer serverReference;
+
+    private static Timer timer = new Timer();
+    private static Calendar date = Calendar.getInstance();
+
     private static List<String> blacklist = new LinkedList<>();
     private static Double allowedPlaytime;
     private static Double bonusTime2P;
@@ -53,6 +61,8 @@ public class PlaytimeLimiter
     private static Integer resetTimeMinutes;
 
     private static long oldTime;
+
+
 
 
 
@@ -74,24 +84,17 @@ public class PlaytimeLimiter
         // Some common setup code
         LOGGER.info("HELLO FROM COMMON SETUP");
 
-        //Setup of the Blacklist
-        LOGGER.info("Blacklist in config: " + PlaytimeLimiterServerConfigs.BLACKLIST.get());
-        String[] players = PlaytimeLimiterServerConfigs.BLACKLIST.get().split(",");
-        LOGGER.info("Blacklist readout: " + players.toString());
-        for (int i = 0; i < players.length; i++) {
-            blacklist.add(players[i]);
-        }
-        LOGGER.info("Blacklist: " + blacklist.toString());
+        //Set date for resets
+        /*date.set(Calendar.HOUR, PlaytimeLimiterServerConfigs.RESET_TIME_HOURS.get());
+        date.set(Calendar.MINUTE, PlaytimeLimiterServerConfigs.RESET_TIME_MINUTES.get());
+        date.set(Calendar.SECOND, 0);
 
-        allowedPlaytime = PlaytimeLimiterServerConfigs.ALLOWED_PLAYTIME.get();
-        bonusTime2P = PlaytimeLimiterServerConfigs.BONUS_TIME_2_PLAYERS.get();
-        bonusTime3P = PlaytimeLimiterServerConfigs.BONUS_TIME_3_PLAYERS.get();
-        bonusTime4P = PlaytimeLimiterServerConfigs.BONUS_TIME_4_PLAYERS.get();
-        bonusTime5P = PlaytimeLimiterServerConfigs.BONUS_TIME_5_OR_MORE_PLAYERS.get();
-        resetTimeHours = PlaytimeLimiterServerConfigs.RESET_TIME_HOURS.get();
-        resetTimeMinutes = PlaytimeLimiterServerConfigs.RESET_TIME_MINUTES.get();
+        // Schedule playtime reset
+        timer.schedule(
+                new PlaytimeReset(),
+                date.getTime()
+        );*/
 
-        ModNetworking.register();
     }
 
 
@@ -101,7 +104,30 @@ public class PlaytimeLimiter
     {
         // Do something when the server starts
         LOGGER.info("HELLO from server starting");
+
+        serverReference = event.getServer();
+
+        //Setup the Blacklist from config
+        LOGGER.info("Blacklist in config: " + PlaytimeLimiterServerConfigs.BLACKLIST.get());
+        String[] players = PlaytimeLimiterServerConfigs.BLACKLIST.get().split(",");
+        LOGGER.info("Blacklist readout: " + players.toString());
+        for (int i = 0; i < players.length; i++) {
+            blacklist.add(players[i]);
+        }
+        LOGGER.info("Blacklist: " + blacklist.toString());
+
+        //Read out the rest of the config file
+        allowedPlaytime = PlaytimeLimiterServerConfigs.ALLOWED_PLAYTIME.get();
+        bonusTime2P = PlaytimeLimiterServerConfigs.BONUS_TIME_2_PLAYERS.get();
+        bonusTime3P = PlaytimeLimiterServerConfigs.BONUS_TIME_3_PLAYERS.get();
+        bonusTime4P = PlaytimeLimiterServerConfigs.BONUS_TIME_4_PLAYERS.get();
+        bonusTime5P = PlaytimeLimiterServerConfigs.BONUS_TIME_5_OR_MORE_PLAYERS.get();
+        resetTimeHours = PlaytimeLimiterServerConfigs.RESET_TIME_HOURS.get();
+        resetTimeMinutes = PlaytimeLimiterServerConfigs.RESET_TIME_MINUTES.get();
     }
+
+
+
 
 
     @SubscribeEvent
@@ -150,14 +176,10 @@ public class PlaytimeLimiter
         //and registers a player in the config file if he joins for the first time
         @SubscribeEvent
         public static void onPlayerJoin(PlayerEvent.PlayerLoggedInEvent event) {
+            Player player = event.getEntity();
             String playerID = event.getEntity().getUUID().toString();
 
-            //Tells the player how much playtime he has left
-            event.getEntity().getCapability(PlayerTimerProvider.PLAYER_TIMER).ifPresent(timer -> {
-                event.getEntity().sendSystemMessage(Component.literal("Remaining Playtime: " + round(timer.getLeftPlaytime(), 2) + " minutes"));
-            });
-
-
+            //Register new players in config file
             event.getEntity().getCapability(PlayerTimerProvider.PLAYER_TIMER).ifPresent(timer -> {
                 if(PlaytimeLimiterServerConfigs.PLAYER_LIST.get().equals("")) {
                     LOGGER.info("First player joined!");
@@ -180,6 +202,31 @@ public class PlaytimeLimiter
                     }
                 }
 
+            });
+
+            //Deny connection on login if no playtime left
+            if(stringToMap(PlaytimeLimiterServerConfigs.PLAYER_LIST.get()).get(playerID) == 0.0) {
+                Integer kickID = player.getId();
+                for(ServerPlayer serverplayer : player.getServer().getPlayerList().getPlayers()) {
+                    if(serverplayer.getId() == kickID) {
+                        boolean playerOnBlacklist = false;
+                        for(String s : blacklist) {
+                            if(("literal{" + s + "}").equals(player.getName())) {
+                                playerOnBlacklist = true;
+                            }
+                        }
+                        if(PlaytimeLimiterServerConfigs.ACTIVATED.get() && !playerOnBlacklist) {
+                            LOGGER.info("Player disconnected on login");
+                            playerBeingKicked = player;
+                            serverplayer.connection.disconnect(Component.literal("Your Playtime for today has run out."));
+                        }
+                    }
+                }
+            }
+
+            //Tells the player how much playtime he has left
+            event.getEntity().getCapability(PlayerTimerProvider.PLAYER_TIMER).ifPresent(timer -> {
+                event.getEntity().sendSystemMessage(Component.literal("Remaining Playtime: " + round(timer.getLeftPlaytime(), 2) + " minutes"));
             });
         }
 
@@ -208,11 +255,9 @@ public class PlaytimeLimiter
         @SubscribeEvent
         public static void onServerTick(TickEvent.ServerTickEvent event) {
 
-
-
             //Reset playtimes at the specified time
-            if(java.time.LocalDateTime.now().getHour() == resetTimeHours
-                    && java.time.LocalDateTime.now().getMinute() == resetTimeMinutes
+            if(resetTimeHours.equals(java.time.LocalDateTime.now().getHour())
+                    && resetTimeMinutes.equals(java.time.LocalDateTime.now().getMinute())
                     && java.time.LocalDateTime.now().getSecond() == 0) {
                 LOGGER.info("Resetting playtime for all players");
                 HashMap<String, Double> playerMap = stringToMap(PlaytimeLimiterServerConfigs.PLAYER_LIST.get());
@@ -237,7 +282,8 @@ public class PlaytimeLimiter
             }
 
 
-            //Calculates how much the playtime has to be decreased
+
+            //Calculate how much the playtime has to be decreased
             int playersOnline = event.getServer().getPlayerCount();
             double amount;
             double amountToBeDecreased;
@@ -268,9 +314,13 @@ public class PlaytimeLimiter
             }
 
 
-            //Decreases playtime for each player according to how many players are online
+
             for(Player player : event.getServer().getPlayerList().getPlayers()) {
-                LOGGER.info("Calculating: " + player.getName());
+
+                //Don't handle if player is already being kicked
+                if(player == playerBeingKicked) {
+                    break;
+                }
 
                 //Decrease playtime of the player according to calculation
                 player.getCapability(PlayerTimerProvider.PLAYER_TIMER).ifPresent(timer -> {
@@ -283,6 +333,8 @@ public class PlaytimeLimiter
                     else if(timeBefore >= 1.0 && timeAfter < 1.0) {
                         player.sendSystemMessage(Component.literal("Remaining Playtime: 1 minute"));
                     }
+
+                    //If player has no playtime left, kick if needed
                     if(!playtimeLeft) {
                         Integer playerID = player.getId();
                         for(ServerPlayer serverplayer : event.getServer().getPlayerList().getPlayers()) {
@@ -300,6 +352,11 @@ public class PlaytimeLimiter
                         }
                     }
                 });
+            }
+
+            //Update playerBeingKicked if no player is being kicked
+            if(event.getServer().getPlayerList().getPlayerCount() == 0) {
+                playerBeingKicked = null;
             }
         }
 
@@ -372,4 +429,29 @@ public class PlaytimeLimiter
             });
         }*/
     }
+
+    /*public class PlaytimeReset extends TimerTask {
+        public void run() {
+            LOGGER.info("Resetting playtime for all players");
+            HashMap<String, Double> playerMap = stringToMap(PlaytimeLimiterServerConfigs.PLAYER_LIST.get());
+            for(Player player : serverReference.getPlayerList().getPlayers()) {
+                if(playerMap.containsKey(player.getUUID().toString())) {
+                    player.getCapability(PlayerTimerProvider.PLAYER_TIMER).ifPresent(timer -> {
+                        timer.setLeftPlaytime(allowedPlaytime);
+                    });
+                }
+            }
+
+            List<String> playerIDs = new LinkedList<>();
+            for(ServerPlayer player : serverReference.getPlayerList().getPlayers()) {
+                playerIDs.add(player.getUUID().toString());
+            }
+            for(String player : playerMap.keySet()) {
+                if(!playerIDs.contains(player)) {
+                    playerMap.put(player, allowedPlaytime);
+                }
+            }
+            PlaytimeLimiterServerConfigs.PLAYER_LIST.set(mapToString(playerMap));
+        }
+    }*/
 }

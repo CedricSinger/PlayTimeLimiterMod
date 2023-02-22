@@ -35,11 +35,11 @@ public class PlaytimeLimiterServerConfigs {
         BONUS_TIME_5_OR_MORE_PLAYERS = BUILDER.comment("The multiplier for allowed playtime when 5 or more players are online")
                 .define("5-Player-Factor", 0.0);
         RESET_TIME_HOURS = BUILDER.comment("Time at which the playtime limit resets (hours of day)")
-                .define("Time in hours (24h-Format)", 12);
+                .define("Time_in_hours_(24h-Format)", 12);
         RESET_TIME_MINUTES = BUILDER.comment("Time at which the playtime limit resets (minutes of hour)")
-                .define("Time in minutes", 0);
+                .define("Time_in_minutes", 0);
         BLACKLIST = BUILDER.comment("Players who will have no playtime limit")
-                        .define("List of players, separated by ','", "");
+                        .define("List_of_players_separated_by','", "");
         PLAYER_LIST = BUILDER.comment("Don't change if you don't know what you're doing! List of all Players and their respective playtime, \nonly updated when players log out and when playtime gets updated")
                         .define("Players", "");
 

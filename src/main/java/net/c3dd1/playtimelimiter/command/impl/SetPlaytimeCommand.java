@@ -2,6 +2,7 @@ package net.c3dd1.playtimelimiter.command.impl;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import net.c3dd1.playtimelimiter.PlaytimeLimiter;
 import net.c3dd1.playtimelimiter.command.BaseCommand;
 import net.c3dd1.playtimelimiter.timer.PlayerTimerProvider;
 import net.minecraft.commands.CommandSourceStack;
